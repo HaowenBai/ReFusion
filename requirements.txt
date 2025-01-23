@@ -5,3 +5,4 @@ scikit_image==0.19.3
 torch==2.0.1
 torch==2.0.1
 tqdm==4.66.1
+imageio==2.26.0

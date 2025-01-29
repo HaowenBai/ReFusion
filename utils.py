@@ -20,7 +20,7 @@ def img_save(image, imagename, savepath, CrCb=None):
     path2 = os.path.join(savepath, 'Gray')
     if not os.path.exists(path2):
         os.makedirs(path2)
-    imsave(os.path.join(path2, "{}.png".format(imagename)), temp)
+    imsave(os.path.join(path2, "{}.png".format(imagename)), temp) # If error, make sure imageio==2.26.0 is installed.
 
     if CrCb is not None:
         assert len(CrCb.shape) == 3 and CrCb.shape[2] == 2, "CrCb error"

@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch.autograd import Variable
 import numbers
+from utils import grad
 
 def to_var(x, requires_grad=True):
     if torch.cuda.is_available():
@@ -343,19 +344,113 @@ class ReFusion(nn.Module):
         out=self.act(out)
         out=self.project_out_1(out,meta=meta)
         return nn.Sigmoid()(out)
-    
-def named_params(curr_module, prefix=''): 
-    memo=set()
-    if hasattr(curr_module, 'named_leaves'):
-        for name, p in curr_module.named_leaves():
-            if p is not None and p not in memo:
-                memo.add(p)
-                yield prefix + ('.' if prefix else '') + name, p
 
-    for mname, module in curr_module.named_children():
-            submodule_prefix = prefix + ('.' if prefix else '') + mname
-            for name, p in named_params(module, submodule_prefix):
-                yield name, p
+class ReN(nn.Module):
+    def __init__(self,
+                 dim=32,
+                 num_blocks=2,
+                 heads=[8, 8, 8],
+                 ffn_expansion_factor=2,
+                 bias=False,
+                 act="Sigmoid"
+                 ):
+
+        super(ReN, self).__init__()
+
+        self.patch_embed1=MetaConv2d(in_channels=1,out_channels=dim,stride=1,padding=1,kernel_size=3,bias=bias)
+        self.patch_embed2=MetaConv2d(in_channels=1,out_channels=dim,stride=1,padding=1,kernel_size=3,bias=bias)
+
+        self.encoder1 = nn.ModuleList([TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias) for i in range(num_blocks)])
+        self.encoder2 = nn.ModuleList([TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias) for i in range(num_blocks)])        
+
+        self.out1_1=MetaConv2d(in_channels=int(dim),out_channels=int(dim)//2,stride=1,padding=1,kernel_size=3,bias=bias)
+        self.out1_2=nn.LeakyReLU()
+        self.out1_3=MetaConv2d(in_channels=int(dim)//2,out_channels=1,stride=1,padding=1,kernel_size=3,bias=bias)
+
+        self.out2_1=MetaConv2d(in_channels=int(dim),out_channels=int(dim)//2,stride=1,padding=1,kernel_size=3,bias=bias)
+        self.out2_2=nn.LeakyReLU()
+        self.out2_3=MetaConv2d(in_channels=int(dim)//2,out_channels=1,stride=1,padding=1,kernel_size=3,bias=bias)
+  
+    def forward(self, x,meta=False):
+        #print(meta)
+        x1 = self.patch_embed1(x,meta=meta)
+        for subm in self.encoder1:
+            x1 = subm(x1,meta=meta)
+        x1=self.out1_1(x1,meta=meta)
+        x1=self.out1_2(x1)
+        x1=self.out1_3(x1,meta=meta)
+
+
+        x2 = self.patch_embed2(x,meta=meta)
+        for subm in self.encoder2:
+            x2 = subm(x2,meta=meta)
+        x2=self.out2_1(x2,meta=meta)
+        x2=self.out2_2(x2)
+        x2=self.out2_3(x2,meta=meta)
+        return torch.cat((nn.Sigmoid()(x1),nn.Sigmoid()(x2)),1)
+
+class PN(nn.Module):
+    def __init__(self,
+                 dim=16,
+                 num_blocks=2,
+                 heads=[8, 8, 8],
+                 ffn_expansion_factor=2,
+                 bias=False,
+                 ):
+
+        super(PN, self).__init__()
+
+        self.patch_embed1=MetaConv2d(in_channels=1,out_channels=dim,stride=1,padding=1,kernel_size=3,bias=bias)
+        self.patch_embed2=MetaConv2d(in_channels=1,out_channels=dim,stride=1,padding=1,kernel_size=3,bias=bias)
+
+        self.encoder1 = nn.ModuleList([TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias) for i in range(num_blocks)])
+        self.encoder2 = nn.ModuleList([TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias) for i in range(num_blocks)])        
+
+        self.encoder3 = nn.ModuleList([TransformerBlock(dim=2*dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias) for i in range(num_blocks)]) 
+        
+        self.out1=MetaConv2d(in_channels=int(2*dim),out_channels=int(dim),stride=1,padding=1,kernel_size=3,bias=bias)
+        self.out2=MetaPReLU()
+        self.out3=MetaConv2d(in_channels=int(dim),out_channels=2,stride=1,padding=1,kernel_size=3,bias=bias)
+
+    def forward(self, x,meta=False):
+        x1=x[:,:1,:,:]
+        x2=x[:,1:,:,:]
+
+        x1 = self.patch_embed1(x1,meta=meta)
+        for subm in self.encoder1:
+            x1 = subm(x1,meta=meta)
+        x2 = self.patch_embed2(x2,meta=meta)
+        for subm in self.encoder2:
+            x2 = subm(x2,meta=meta)
+        out=torch.cat((x1,x2),1)
+        for subm in self.encoder3:
+            out = subm(out,meta=meta)
+        out=self.out1(out,meta=meta)
+        out=self.out2(out)
+        out=self.out3(out,meta=meta)
+
+        return nn.Softmax(dim=1)(out)
+    
+
+class LPN(nn.Module):
+    def __init__(self,
+                dim=16,
+                num_blocks=2,
+                heads=[8, 8, 8],
+                ffn_expansion_factor=2,
+                bias=False,
+                ):
+
+        super(LPN, self).__init__()
+        self.LPN1=PN (dim=dim,num_blocks=num_blocks,heads=heads,ffn_expansion_factor=ffn_expansion_factor,bias=bias)
+        self.LPN2=PN (dim=dim,num_blocks=num_blocks,heads=heads,ffn_expansion_factor=ffn_expansion_factor,bias=bias)
+
+    def forward(self, x,meta=False):
+
+        W=self.LPN1(x,meta=meta)
+        V=self.LPN2(torch.cat((grad(x[:,:1,:,:]),grad(x[:,1:,:,:])),1),meta=meta)
+        return W,V
+     
 
 def unit_test():
     import numpy as np

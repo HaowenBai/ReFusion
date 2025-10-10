@@ -7,6 +7,7 @@ Codes for ***ReFusion: Learning Image Fusion from Reconstruction with Learnable 
 -[*[ArXiv]*](https://arxiv.org/abs/2312.07943)  
 
 ## Update
+- [2025/10] Release training code.
 - [2025/1] Release inference code.
 
 ## Citation
@@ -33,7 +34,26 @@ Image fusion aims to combine information from multiple source images into a sing
 Our ReFusion is implemented in ``ReFusion.py``.
 
 ### 🏊 Training
-The training code is currently being prepared. Stay tuned!
+**1. Data Preparation**
+
+Taking infrared-visible image fusion (IVIF) as an example:
+
+Modify the paths on lines 23 and 24 and run ``python data/img2patch.py``
+to convert the images into patches.
+
+Alternatively, you can directly download the  [Pre-processed dataset](https://drive.google.com/file/d/1-fgqKTz860jzoyF0OlAgSfXSycZxBpXF/view?usp=sharing) and put it to ``./data`` and extract it to ``data/MSRS_train`` by
+```
+cd data
+unzip MSRS_train.zip -d MSRS_train/
+``` 
+
+**2. Commence Training**
+
+Modify the path on line 60 of ``train.py``, and run
+```
+python train.py
+``` 
+The models will be saved in the ``./exp`` directory based on the timestamp.
 
 ### 🏄 Testing
 

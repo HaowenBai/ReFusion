@@ -66,4 +66,5 @@ for task in ["IVIF", "MIF", "MFIF", "MEIF"]:
             data_Fuse=Fusion_model(torch.cat((img1,img2),1))
             data_Fuse=(data_Fuse-torch.min(data_Fuse))/(torch.max(data_Fuse)-torch.min(data_Fuse))
             fused_image = np.squeeze((data_Fuse * 255).cpu().numpy())
-            img_save(fused_image, imgname.split(sep='.')[0], path_result, CrCb)
+
+            image_save(fused_image, imgname.split(sep='.')[0], path_result, CrCb)
